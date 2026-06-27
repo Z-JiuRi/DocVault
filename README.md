@@ -85,39 +85,50 @@ MacBook    / Documents / notes.md
 
 ```text
 docvault/
+├── .github/workflows/            # CI：跨平台构建、测试、Schema 校验
+├── .gitignore
+├── .env.example
 ├── AGENTS.md
 ├── README.md
+├── Makefile                      # 统一入口：dev/lint/typecheck/test/build
 ├── apps/
 │   ├── client/
-│   │   ├── README.md
-│   │   ├── desktop/              # Tauri 2 + React + TypeScript
-│   │   │   ├── src/
-│   │   │   ├── src-tauri/
-│   │   │   └── package.json
-│   │   └── agent/                # Python 本地备份 Agent
-│   │       ├── src/
+│   │   ├── desktop/              # Tauri 2 + React + TypeScript 桌面界面
+│   │   │   ├── src/              #   pages/、components/、hooks/、stores/
+│   │   │   ├── src-tauri/        #   Rust 原生层：托盘、Agent 管理、IPC
+│   │   │   ├── tests/
+│   │   │   ├── package.json
+│   │   │   └── vite.config.ts
+│   │   └── agent/                # Python 3.12+ 本地备份 Agent
+│   │       ├── src/docvault_agent/  # watcher/、debounce/、scanner/、db/ …
 │   │       ├── tests/
 │   │       └── pyproject.toml
-│   └── server/                   # NAS / 局域网 FastAPI 服务
-│       ├── README.md
-│       ├── src/
+│   └── server/                   # FastAPI + PostgreSQL + Worker
+│       ├── src/docvault_server/  #   api/、models/、services/、storage/ …
 │       ├── tests/
-│       ├── migrations/
-│       ├── pyproject.toml
-│       └── Dockerfile
+│       ├── alembic/              #   数据库迁移
+│       ├── Dockerfile
+│       └── pyproject.toml
 ├── packages/
-│   ├── api-client/               # OpenAPI 生成的 TypeScript 客户端
-│   └── shared-schemas/           # 协议级 Schema 和枚举
+│   ├── api-client/               # OpenAPI 生成 TypeScript 客户端 (禁止手改 generated/)
+│   └── shared-schemas/           # 语言无关协议级枚举与错误码 (JSON)
 ├── infra/
 │   ├── docker-compose.yml
 │   ├── caddy/
-│   └── libreoffice/
-└── docs/
-    ├── architecture.md
-    ├── backup-semantics.md
-    ├── security.md
-    └── api.md
+│   ├── libreoffice/              #   LibreOffice headless 独立镜像
+│   ├── postgres/
+│   └── scripts/                  #   证书生成、api-client 代码生成
+├── docs/
+│   ├── architecture.md
+│   ├── backup-semantics.md
+│   ├── security.md
+│   ├── api.md
+│   ├── development.md
+│   └── decisions/                #   架构决策记录
+└── scripts/                      # setup.sh、clean.sh
 ```
+
+`packages/shared-schemas/` 存放 JSON 格式的枚举值——服务端和 Agent 各自在自己的测试中校验一致性。`packages/api-client/` 由 `infra/scripts/generate-api-client.sh` 从 FastAPI OpenAPI spec 生成；`src/generated/` 目录禁止手动编辑。
 
 客户端与服务端是两个可独立构建、独立发布、独立运行的项目。客户端内部的桌面 UI 与 Python Agent 共同组成一个桌面产品。
 
@@ -131,7 +142,8 @@ docvault/
 - Vite
 - TanStack Query
 - Zustand
-- Monaco Editor 或 CodeMirror
+- pnpm 9+ (workspace 包管理)
+- CodeMirror 6 (DiffView + 语法高亮)
 - `react-markdown`
 - Python 3.12+
 - FastAPI
@@ -154,6 +166,23 @@ docvault/
 - Docker Compose
 
 第一版不需要 MinIO 或 Redis。文件实体直接写入 NAS 挂载目录；若后续出现多节点、对象存储兼容或任务吞吐需求，再评估引入。
+
+## API 版本化与设备注册
+
+- 所有 API 路径以 `/v1/` 前缀版本化；OpenAPI spec 位于 `/v1/openapi.json`
+- 服务端首次启动生成一次性 Bootstrap Token，通过桌面 UI 完成首台设备注册
+- 后续设备由已注册设备生成一次性 Registration Token (带 TTL) 完成注册
+- 设备认证使用可撤销的长期 Device Token
+
+## 分块上传
+
+文件上传使用三阶段协议：
+
+```text
+POST   /v1/upload/session           创建会话 (返回 session_id, TTL 30min)
+PUT    /v1/upload/session/{id}/chunk/{n}  上传第 n 块 (4 MiB/块, 可幂等重传)
+POST   /v1/upload/session/{id}/commit    提交校验 (SHA-256 拼接验证)
+```
 
 ## 第一版功能范围
 

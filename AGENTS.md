@@ -95,29 +95,274 @@ device_id + backup_root_id + relative_path
 
 ```text
 docvault/
+├── .github/
+│   └── workflows/
+│       ├── ci-desktop.yml            # Tauri 跨平台构建 + TypeScript 检查
+│       ├── ci-agent.yml              # Python Agent 测试 + PyInstaller 打包
+│       ├── ci-server.yml             # FastAPI 测试 + Docker 镜像构建
+│       └── ci-schemas.yml            # shared-schemas 校验 + api-client 一致性检查
+│
+├── .gitignore                        # 根级：忽略 .env, data/, *.log, node_modules/
+├── .env.example                      # 服务端环境变量模板
 ├── AGENTS.md
 ├── README.md
+├── Makefile                          # 统一入口，委派到各子项目
+│
 ├── apps/
 │   ├── client/
 │   │   ├── README.md
-│   │   ├── desktop/          # Tauri 2 + React + TypeScript
-│   │   └── agent/            # Python 3.12+ 本地备份 Agent
-│   └── server/               # FastAPI + PostgreSQL + Worker
+│   │   │
+│   │   ├── desktop/                  # Tauri 2 + React + TypeScript 桌面界面
+│   │   │   ├── .gitignore
+│   │   │   ├── package.json          # 包名 @docvault/desktop
+│   │   │   ├── tsconfig.json
+│   │   │   ├── vite.config.ts
+│   │   │   ├── index.html
+│   │   │   ├── src/
+│   │   │   │   ├── main.tsx          # React 入口
+│   │   │   │   ├── App.tsx           # 路由 + 布局
+│   │   │   │   ├── pages/            # 6 个主页面
+│   │   │   │   │   ├── Overview.tsx        # 概览：服务器状态、最近文件、存储用量
+│   │   │   │   │   ├── BackupRoots.tsx     # 备份目录管理：添加/移除/暂停/排除规则
+│   │   │   │   │   ├── FileBrowser.tsx     # 文件库：设备→备份根→文件树
+│   │   │   │   │   ├── FileDetail.tsx      # 文件详情：预览、元数据、历史、Diff、恢复
+│   │   │   │   │   ├── TaskCenter.tsx      # 任务中心：上传/重试/失败/恢复/扫描进度
+│   │   │   │   │   └── Settings.tsx        # 设置：NAS、设备、开机启动、密码锁
+│   │   │   │   ├── components/       # 跨页面复用的 UI 组件
+│   │   │   │   │   ├── FileTree.tsx
+│   │   │   │   │   ├── DiffView.tsx
+│   │   │   │   │   ├── PreviewPane.tsx
+│   │   │   │   │   ├── VersionList.tsx
+│   │   │   │   │   └── PasswordLock.tsx
+│   │   │   │   ├── hooks/            # TanStack Query hooks + 自定义 hooks
+│   │   │   │   ├── stores/           # Zustand stores (UI 状态，非业务状态)
+│   │   │   │   ├── lib/              # 纯函数工具
+│   │   │   │   └── styles/
+│   │   │   ├── src-tauri/
+│   │   │   │   ├── Cargo.toml
+│   │   │   │   ├── tauri.conf.json
+│   │   │   │   ├── capabilities/
+│   │   │   │   ├── icons/
+│   │   │   │   └── src/
+│   │   │   │       ├── main.rs       # Tauri 入口
+│   │   │   │       ├── lib.rs
+│   │   │   │       ├── commands/     # Tauri IPC commands (薄层，调用 agent_mgr)
+│   │   │   │       ├── tray/         # 系统托盘逻辑
+│   │   │   │       └── agent_mgr/    # Python Agent 进程生命周期管理
+│   │   │   └── tests/
+│   │   │
+│   │   └── agent/                    # Python 3.12+ 本地备份 Agent
+│   │       ├── .gitignore
+│   │       ├── pyproject.toml        # 包名 docvault_agent
+│   │       ├── README.md
+│   │       ├── src/
+│   │       │   └── docvault_agent/
+│   │       │       ├── __init__.py
+│   │       │       ├── __main__.py   # python -m docvault_agent 入口
+│   │       │       ├── api/          # FastAPI 本地 HTTP 接口 (127.0.0.1 随机端口)
+│   │       │       │   ├── __init__.py
+│   │       │       │   ├── app.py    # FastAPI app 创建 + 临时 token 中间件
+│   │       │       │   └── routes.py # /status, /tasks, /backup-roots 等
+│   │       │       ├── watcher/      # watchdog 文件系统监听
+│   │       │       │   ├── __init__.py
+│   │       │       │   └── handler.py
+│   │       │       ├── debounce/     # 10 分钟防抖 + 持久化到 SQLite
+│   │       │       │   ├── __init__.py
+│   │       │       │   └── manager.py
+│   │       │       ├── scanner/      # 30 分钟补偿全量扫描
+│   │       │       │   ├── __init__.py
+│   │       │       │   └── scanner.py
+│   │       │       ├── hasher.py     # SHA-256 流式哈希
+│   │       │       ├── uploader/     # 分块上传 + 指数退避重试
+│   │       │       │   ├── __init__.py
+│   │       │       │   └── client.py
+│   │       │       ├── downloader.py # 下载 + SHA-256 校验
+│   │       │       ├── restorer.py   # 安全恢复 (7 步流程，见不变量 2.8)
+│   │       │       ├── db/           # SQLite 管理 (与前向兼容迁移分离)
+│   │       │       │   ├── __init__.py
+│   │       │       │   ├── models.py # 表定义
+│   │       │       │   ├── migrations.py
+│   │       │       │   └── repo.py   # 仓储层
+│   │       │       ├── config.py     # TOML 配置加载
+│   │       │       └── server_client.py # 对 NAS 服务端的 HTTP 客户端
+│   │       └── tests/
+│   │           ├── conftest.py
+│   │           ├── test_watcher.py
+│   │           ├── test_debounce.py
+│   │           ├── test_scanner.py
+│   │           ├── test_hasher.py
+│   │           ├── test_uploader.py
+│   │           ├── test_restorer.py
+│   │           └── fixtures/
+│   │               └── sample_files/
+│   │
+│   └── server/                       # NAS / 局域网 FastAPI 服务
+│       ├── .gitignore
+│       ├── pyproject.toml            # 包名 docvault_server
+│       ├── README.md
+│       ├── Dockerfile
+│       ├── alembic.ini
+│       ├── alembic/
+│       │   ├── env.py
+│       │   └── versions/             # 数据库迁移脚本
+│       ├── src/
+│       │   └── docvault_server/
+│       │       ├── __init__.py
+│       │       ├── __main__.py       # uvicorn 启动入口
+│       │       ├── api/              # FastAPI 路由层 (薄层，不含业务逻辑)
+│       │       │   ├── __init__.py
+│       │       │   ├── router.py     # 总路由挂载
+│       │       │   ├── devices.py    # 设备注册、令牌管理
+│       │       │   ├── backup.py     # 上传会话、分块上传、提交、校验
+│       │       │   ├── files.py      # 文件树、版本、tombstone
+│       │       │   ├── preview.py    # 预览任务状态、派生物下载
+│       │       │   ├── restore.py    # 下载、恢复
+│       │       │   └── admin.py      # 永久删除、审计查询
+│       │       ├── models/           # SQLAlchemy ORM 模型
+│       │       │   ├── __init__.py
+│       │       │   ├── base.py       # 共享基类 (UUID pk, created_at, updated_at)
+│       │       │   ├── device.py
+│       │       │   ├── backup_root.py
+│       │       │   ├── file_entry.py
+│       │       │   ├── file_version.py
+│       │       │   ├── blob.py
+│       │       │   ├── preview.py
+│       │       │   ├── password_lock.py
+│       │       │   └── audit.py
+│       │       ├── schemas/          # Pydantic 请求/响应 Schema (OpenAPI 来源)
+│       │       │   ├── __init__.py
+│       │       │   ├── common.py     # 分页、错误响应等通用模型
+│       │       │   ├── device.py
+│       │       │   ├── backup.py
+│       │       │   ├── file.py
+│       │       │   ├── preview.py
+│       │       │   └── admin.py
+│       │       ├── services/         # 业务逻辑层
+│       │       │   ├── __init__.py
+│       │       │   ├── device_service.py
+│       │       │   ├── backup_service.py
+│       │       │   ├── file_service.py
+│       │       │   ├── preview_service.py
+│       │       │   └── restore_service.py
+│       │       ├── storage/          # 内容寻址 Blob 存储
+│       │       │   ├── __init__.py
+│       │       │   ├── blob_store.py # 写入/读取/去重，临时文件 + 原子移动
+│       │       │   └── paths.py      # blobs/ab/cd/<sha256> 路径计算
+│       │       ├── preview/          # 预览生成 (不修改原始 Blob)
+│       │       │   ├── __init__.py
+│       │       │   ├── text.py       # 文本/代码语法高亮
+│       │       │   ├── image.py      # 图片缩略图
+│       │       │   ├── pdf.py        # PDF 预览
+│       │       │   └── office.py     # LibreOffice 转换封装 (超时、隔离)
+│       │       ├── worker/           # 后台任务 Worker
+│       │       │   ├── __init__.py
+│       │       │   ├── broker.py     # 任务队列 (第一版用 PostgreSQL 轮询)
+│       │       │   └── handlers.py   # 任务分发 + 重试
+│       │       ├── auth/             # 设备令牌认证
+│       │       │   ├── __init__.py
+│       │       │   ├── middleware.py # FastAPI 中间件
+│       │       │   └── tokens.py     # 令牌生成、验证、撤销
+│       │       ├── config.py         # pydantic-settings 配置
+│       │       └── audit.py          # 审计日志写入
+│       └── tests/
+│           ├── conftest.py           # test client + test DB fixtures
+│           ├── test_devices.py
+│           ├── test_backup.py
+│           ├── test_files.py
+│           ├── test_preview.py
+│           ├── test_restore.py
+│           └── fixtures/
+│               └── sample_files/
+│
 ├── packages/
-│   ├── api-client/           # 根据 OpenAPI 生成，禁止手改生成文件
-│   └── shared-schemas/       # 仅放协议级 Schema/枚举
+│   ├── api-client/                   # OpenAPI 生成的 TypeScript 客户端
+│   │   ├── .gitignore
+│   │   ├── package.json              # @docvault/api-client
+│   │   ├── tsconfig.json
+│   │   └── src/
+│   │       ├── index.ts              # 手动入口，re-export generated/
+│   │       └── generated/            # 自动生成，禁止手改
+│   │           ├── index.ts
+│   │           ├── types.ts
+│   │           └── client.ts
+│   │
+│   └── shared-schemas/               # 协议级共享定义 (语言无关)
+│       ├── README.md                 # 使用规则：canonical source，两端各自校验
+│       ├── enums/
+│       │   ├── backup_status.json
+│       │   ├── preview_status.json
+│       │   ├── task_status.json
+│       │   ├── file_event.json       # created/modified/moved/deleted
+│       │   ├── error_codes.json
+│       │   └── device_status.json
+│       └── protocols/
+│           └── upload_protocol.json  # 分块大小、校验方式、会话生命周期
+│
 ├── infra/
-│   ├── docker-compose.yml
+│   ├── docker-compose.yml            # PostgreSQL + Caddy + server + worker
+│   ├── docker-compose.override.yml.example
 │   ├── caddy/
-│   └── libreoffice/
-└── docs/
-    ├── architecture.md
-    ├── backup-semantics.md
-    ├── security.md
-    └── api.md
+│   │   ├── Caddyfile
+│   │   └── certs/                    # .gitignored，仅放自签名证书
+│   ├── libreoffice/
+│   │   └── Dockerfile                # LibreOffice headless worker 独立镜像
+│   ├── postgres/
+│   │   └── init.sql                  # 初始数据库 + 用户创建
+│   └── scripts/
+│       ├── init-certs.sh             # 生成局域网自签名证书
+│       └── generate-api-client.sh    # OpenAPI spec → TypeScript 生成脚本
+│
+├── docs/
+│   ├── architecture.md
+│   ├── backup-semantics.md
+│   ├── security.md
+│   ├── api.md
+│   ├── development.md                # 开发环境搭建指南
+│   └── decisions/                    # 架构决策记录 (ADR)
+│       └── 001-monorepo-structure.md
+│
+└── scripts/
+    ├── setup.sh                      # 一键初始化开发环境
+    └── clean.sh                      # 清理构建产物和临时文件
 ```
 
-### 3.1 客户端职责
+### 3.1 shared-schemas 格式要求
+
+`packages/shared-schemas/` 存放 JSON 格式的枚举和错误码，作为客户端与服务端的事实来源。
+每个 JSON 文件结构极简，只包含类型名称和值列表：
+
+```json
+{
+  "enum": "BackupStatus",
+  "values": ["pending", "debouncing", "hashing", "uploading", "backed_up", "failed"]
+}
+```
+
+规则：
+
+- 修改枚举值先改这里的 JSON，再同步更新两端的对应定义。
+- 服务端和 Agent 分别在测试套件中校验自己使用的枚举值与 JSON 一致。
+- 禁止在代码中硬编码与 JSON 不一致的枚举值。
+
+### 3.2 api-client 生成流程
+
+`packages/api-client/` 是 OpenAPI 生成的 TypeScript 客户端：
+
+```text
+FastAPI OpenAPI Schema (服务端唯一来源)
+        ↓
+infra/scripts/generate-api-client.sh
+        ↓
+packages/api-client/src/generated/
+        ↓
+桌面 UI 通过 packages/api-client/src/index.ts 导入
+```
+
+- `src/generated/` 目录完全由脚本生成，禁止手动编辑。
+- CI 通过比对 OpenAPI spec 的 hash 检测生成代码是否过期。
+- API 变更先修改服务端 Schema，然后重新生成；禁止直接编辑生成代码。
+
+### 3.3 客户端职责
 
 `apps/client/desktop` 负责：
 
@@ -137,7 +382,7 @@ docvault/
 - 分块上传、下载和安全恢复。
 - 只监听 `127.0.0.1` 的本地 API。
 
-### 3.2 服务端职责
+### 3.4 服务端职责
 
 `apps/server` 负责：
 
@@ -150,7 +395,7 @@ docvault/
 - DOCX、XLSX、PPTX 通过 LibreOffice headless 转换后预览。
 - 异步预览任务及失败重试。
 
-### 3.3 禁止共享的实现
+### 3.5 禁止共享的实现
 
 客户端和服务端不得共享：
 
@@ -161,13 +406,25 @@ docvault/
 - NAS 存储实现。
 - 进程生命周期配置。
 
-可以共享：
+可以共享 (存放于 packages/)：
 
-- API 路径和请求/响应 Schema。
-- 错误代码。
-- 上传协议。
-- 任务、版本和预览状态枚举。
-- OpenAPI 生成的 TypeScript 客户端。
+- 协议级枚举和错误码 (packages/shared-schemas/)
+- OpenAPI 生成的 TypeScript 客户端 (packages/api-client/)
+- 上传协议参数 (packages/shared-schemas/protocols/)
+- API 路径模板
+
+### 3.6 错误码体系
+
+所有 API 错误响应统一格式 `{"error_code": "STRING", "detail": "human-readable"}`。第一版错误码枚举定义在 `packages/shared-schemas/enums/error_codes.json`，分为以下类别：
+
+**通用**：`INVALID_REQUEST`, `VALIDATION_ERROR`, `INTERNAL_ERROR`, `NOT_FOUND`
+**认证**：`UNAUTHORIZED`, `TOKEN_EXPIRED`, `TOKEN_REVOKED`, `BOOTSTRAP_TOKEN_INVALID`, `DEVICE_NOT_REGISTERED`
+**上传**：`SESSION_NOT_FOUND`, `CHUNK_INDEX_INVALID`, `CHUNK_SIZE_MISMATCH`, `HASH_MISMATCH`, `UPLOAD_TOO_LARGE`, `SESSION_TIMEOUT`
+**文件操作**：`FILE_NOT_FOUND`, `VERSION_NOT_FOUND`, `PATH_TRAVERSAL`, `INVALID_PATH`, `BACKUP_ROOT_NOT_FOUND`
+**预览**：`PREVIEW_FAILED`, `PREVIEW_TIMEOUT`, `PREVIEW_FORMAT_UNSUPPORTED`, `PREVIEW_RETRYABLE`
+**永久删除**：`DELETE_REJECTED`, `PASSWORD_REQUIRED`, `BLOB_STILL_REFERENCED`
+
+新增错误码遵循：先在 JSON 定义 → 两端同步更新 → 测试验证。禁止在代码中硬编码未定义的错误码。
 
 ## 4. API 与本地通信规则
 
@@ -193,11 +450,19 @@ docvault/
 ### 5.1 内容寻址存储
 
 - 原始内容以 SHA-256 为键存入 NAS 挂载目录。
-- 推荐布局：`blobs/ab/cd/<full_sha256>`。
+- **Blob 路径**：`blobs/ab/cd/<full_sha256>`，其中 `ab` = SHA-256 前 2 个 hex 字符，`cd` = 第 3-4 个 hex 字符。
 - 写入过程使用临时文件，完成校验后原子移动到最终位置。
 - 相同哈希只保存一份 Blob，版本表通过引用关联。
 - 数据库事务失败时不得留下“已成功版本但 Blob 不存在”的状态。
 - Blob 垃圾回收只能由显式永久删除流程触发，第一版不得后台自动清理。
+
+**分块上传协议**：
+
+1. `POST /v1/upload/session` — 创建上传会话 (返回 session_id, TTL 30min)
+2. `PUT /v1/upload/session/{id}/chunk/{n}` — 上传第 n 块 (块大小 4 MiB)
+3. `POST /v1/upload/session/{id}/commit` — 提交，服务端拼接校验 SHA-256
+4. 每块可幂等重传 (session_id + chunk_index 去重)
+5. 超时未提交则清理已上传临时块
 
 ### 5.2 客户端 SQLite
 
@@ -211,7 +476,7 @@ docvault/
 - 上传、删除和恢复任务。
 - 重试次数、下次重试时间和最后错误。
 
-本地数据库迁移必须向前兼容，升级失败不得删除待上传任务。
+**迁移策略**：版本号递增，`schema_version` 表记录当前版本。迁移是纯函数：检查版本 → 执行升级 → 写入新版本号。失败不得删除待上传任务；保留旧库副本 (`.db.bak`)，下次启动重试。
 
 ### 5.3 服务端 PostgreSQL
 
@@ -248,11 +513,17 @@ Diff 至少支持：
 
 ### 6.2 备份与预览，不要求 Diff
 
-- `.pdf`
-- `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`
-- `.docx`, `.xlsx`, `.pptx`
+- `.pdf` — 客户端浏览器内嵌 PDF 查看器 (iframe)，无需服务端转换
+- `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg` — 服务端生成缩略图，客户端直接展示
+- `.docx`, `.xlsx`, `.pptx` — 服务端 LibreOffice headless 转换为 PDF 后预览
 
-Office 预览是第一版必须能力，使用服务端 LibreOffice headless 转换。转换结果是派生物，不得替代原始文件。
+**Office 预览规则**：
+
+- 统一转换目标为 PDF (保留布局，跨平台一致)
+- 必须设置超时 (默认 120s)、文件大小上限和独立临时目录
+- 转换失败只影响预览派生物，不得回滚原始备份
+- 失败记录可重试状态，用户可手动重试
+- LibreOffice 进程运行在独立 Docker 容器 (`infra/libreoffice/Dockerfile`)，与服务端 API 容器隔离
 
 ### 6.3 第一版不承诺
 
@@ -390,3 +661,125 @@ make build
 - 客户端和服务端共用数据库模型或本地路径逻辑。
 - 为了让测试通过而删除数据完整性检查。
 - 在未征得确认时扩大需求、添加同步、账号体系、公网部署、在线编辑或端到端加密。
+
+## 12. 项目初始化检查清单 (M0)
+
+M0 完成后，以下目录和文件必须存在。每完成一项，在 CI 或人工检查中勾选。
+
+### 12.1 根级文件
+
+- [ ] `.gitignore` — 根级忽略规则：`.env`、`data/`、`*.log`、`node_modules/`、`__pycache__/`、`.mypy_cache/`、`.ruff_cache/`、`target/`（Rust）、`dist/`、`*.pyc`
+- [ ] `.env.example` — 服务端所有必需环境变量及其说明（不含真实密钥）
+- [ ] `Makefile` — 至少包含 `dev-server`、`dev-agent`、`dev-desktop`、`lint`、`typecheck`、`test`、`build` 目标，每个目标委托到对应子项目
+- [ ] `AGENTS.md` — 本文档
+- [ ] `README.md` — 项目概述，与 AGENTS.md 的结构描述一致
+
+### 12.2 包管理根布局
+
+- [ ] 根级 `pnpm-workspace.yaml`（若使用 pnpm workspace），包含 `apps/client/desktop` 和 `packages/api-client` 引用
+- [ ] 或根级 `package.json` 的 `workspaces` 声明（若使用 npm/yarn）
+
+### 12.3 shared-schemas
+
+- [ ] `packages/shared-schemas/enums/backup_status.json`
+- [ ] `packages/shared-schemas/enums/preview_status.json`
+- [ ] `packages/shared-schemas/enums/task_status.json`
+- [ ] `packages/shared-schemas/enums/file_event.json`
+- [ ] `packages/shared-schemas/enums/error_codes.json`
+- [ ] `packages/shared-schemas/enums/device_status.json`
+- [ ] `packages/shared-schemas/protocols/upload_protocol.json`
+- [ ] `packages/shared-schemas/README.md` — 说明 JSON 文件是 canonical source，两端必须各自校验、保持一致
+- [ ] 每个 JSON 文件格式为 `{"enum": "<Name>", "values": [...]}`
+
+### 12.4 客户端 desktop (Tauri + React)
+
+- [ ] `apps/client/desktop/package.json` — 包名 `@docvault/desktop`，依赖包含 React、Vite、TanStack Query、Zustand、Monaco Editor 或 CodeMirror、react-markdown
+- [ ] `apps/client/desktop/tsconfig.json`
+- [ ] `apps/client/desktop/vite.config.ts`
+- [ ] `apps/client/desktop/index.html`
+- [ ] `apps/client/desktop/src/main.tsx`
+- [ ] `apps/client/desktop/src/App.tsx` — 路由骨架 + 布局
+- [ ] `apps/client/desktop/src/pages/` 下 6 个页面占位文件
+- [ ] `apps/client/desktop/src-tauri/Cargo.toml`
+- [ ] `apps/client/desktop/src-tauri/tauri.conf.json`
+- [ ] `apps/client/desktop/src-tauri/src/main.rs` 和 `lib.rs`
+- [ ] `apps/client/desktop/.gitignore`
+
+### 12.5 客户端 agent (Python)
+
+- [ ] `apps/client/agent/pyproject.toml` — 包名 `docvault_agent`，Python >=3.12，依赖包含 fastapi、uvicorn、watchdog、httpx、aiosqlite
+- [ ] `apps/client/agent/src/docvault_agent/__init__.py` 和 `__main__.py`
+- [ ] `apps/client/agent/src/docvault_agent/config.py`
+- [ ] `apps/client/agent/src/docvault_agent/db/` — models.py、migrations.py、repo.py
+- [ ] `apps/client/agent/src/docvault_agent/watcher/` — handler.py
+- [ ] `apps/client/agent/src/docvault_agent/debounce/` — manager.py
+- [ ] `apps/client/agent/src/docvault_agent/scanner/` — scanner.py
+- [ ] `apps/client/agent/src/docvault_agent/hasher.py`
+- [ ] `apps/client/agent/src/docvault_agent/api/` — app.py、routes.py
+- [ ] `apps/client/agent/tests/` — conftest.py + 至少一个占位测试
+- [ ] `apps/client/agent/.gitignore`
+
+### 12.6 服务端 (Python)
+
+- [ ] `apps/server/pyproject.toml` — 包名 `docvault_server`，Python >=3.12，依赖包含 fastapi、uvicorn、sqlalchemy、alembic、psycopg、pydantic-settings
+- [ ] `apps/server/alembic.ini` 和 `alembic/env.py`，versions/ 目录存在
+- [ ] `apps/server/Dockerfile`
+- [ ] `apps/server/src/docvault_server/__init__.py` 和 `__main__.py`
+- [ ] `apps/server/src/docvault_server/config.py`
+- [ ] `apps/server/src/docvault_server/api/router.py` + 各路由模块占位文件
+- [ ] `apps/server/src/docvault_server/models/base.py` + 各 ORM 模型占位文件
+- [ ] `apps/server/src/docvault_server/schemas/common.py` + 各 Schema 模块占位文件
+- [ ] `apps/server/src/docvault_server/services/` — 各 service 占位文件
+- [ ] `apps/server/src/docvault_server/storage/` — blob_store.py、paths.py
+- [ ] `apps/server/src/docvault_server/preview/` — text.py、image.py、pdf.py、office.py
+- [ ] `apps/server/src/docvault_server/worker/` — broker.py、handlers.py
+- [ ] `apps/server/src/docvault_server/auth/` — middleware.py、tokens.py
+- [ ] `apps/server/src/docvault_server/audit.py`
+- [ ] `apps/server/tests/` — conftest.py + 至少一个占位测试
+- [ ] `apps/server/.gitignore`
+
+### 12.7 api-client
+
+- [ ] `packages/api-client/package.json` — 包名 `@docvault/api-client`
+- [ ] `packages/api-client/tsconfig.json`
+- [ ] `packages/api-client/src/index.ts` — 手动编写的 re-export 入口
+- [ ] `packages/api-client/src/generated/` — 空目录，`.gitkeep` 占位；生成脚本运行后填充
+- [ ] `packages/api-client/.gitignore`
+
+### 12.8 基础设施
+
+- [ ] `infra/docker-compose.yml` — 包含 PostgreSQL、Caddy、server、worker 服务定义
+- [ ] `infra/docker-compose.override.yml.example`
+- [ ] `infra/caddy/Caddyfile`
+- [ ] `infra/libreoffice/Dockerfile` — LibreOffice headless 独立镜像
+- [ ] `infra/postgres/init.sql`
+- [ ] `infra/scripts/init-certs.sh`
+- [ ] `infra/scripts/generate-api-client.sh`
+
+### 12.9 CI
+
+- [ ] `.github/workflows/ci-desktop.yml` — Tauri 跨平台构建 + TypeScript 类型检查和 lint
+- [ ] `.github/workflows/ci-agent.yml` — Agent 测试 + ruff + mypy
+- [ ] `.github/workflows/ci-server.yml` — Server 测试 + ruff + mypy + Docker 镜像构建
+- [ ] `.github/workflows/ci-schemas.yml` — shared-schemas JSON 格式校验 + api-client 生成代码一致性校验
+
+### 12.10 文档
+
+- [ ] `docs/architecture.md`
+- [ ] `docs/backup-semantics.md`
+- [ ] `docs/security.md`
+- [ ] `docs/api.md`
+- [ ] `docs/development.md`
+- [ ] `docs/decisions/001-monorepo-structure.md`
+
+### 12.11 初始化后验证
+
+初始化完成后，以下命令应当可以运行（即使子项目内部尚无业务逻辑，lint/typecheck/test 至少应通过空项目检查）：
+
+```bash
+make lint
+make typecheck
+make test
+```
+
+若任何子项目尚未配置 lint/typecheck/test 命令，则 `Makefile` 中对应目标可先输出 "not configured" 而不是失败退出，但必须在 M0 结束前完成配置。
