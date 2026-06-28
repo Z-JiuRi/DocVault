@@ -2,7 +2,33 @@
 
 本文档描述从零搭建 DocVault 完整开发环境的步骤。适用于 M0 初始化及后续日常开发。
 
-## 前置依赖
+## 本机环境 (当前状态)
+
+| 项目       | 详情                                          |
+| ---------- | --------------------------------------------- |
+| OS         | Ubuntu 24.04.4 LTS (Noble Numbat), x86_64     |
+| Python     | 3.12.13 (conda env `docvault`)                |
+| Node.js    | v25.9.0 (nvm)                                 |
+| npm        | 11.12.1                                       |
+| Rust       | 1.95.0 stable (rustup)                        |
+| Cargo      | 1.95.0                                        |
+| make       | GNU Make 4.3                                  |
+| conda      | 26.1.1, env `docvault` 已创建                 |
+
+### 已安装的系统库 (Tauri 依赖)
+
+`build-essential`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`,
+`librsvg2-dev`, `patchelf`, `libssl-dev`, `libgtk-3-dev` 均已安装。
+
+### 尚需安装
+
+| 依赖             | 说明                                     |
+| ---------------- | ---------------------------------------- |
+| pnpm             | `npm install -g pnpm` 或启用 corepack    |
+| Docker + Compose | PostgreSQL / Caddy / LibreOffice 容器    |
+| libayatana-appindicator3-dev | Tauri 系统托盘 (Ubuntu 24.04)  |
+
+## 前置依赖 (完整清单)
 
 | 依赖             | 最低版本     | 用途                               |
 | ---------------- | ------------ | ---------------------------------- |
@@ -19,9 +45,13 @@
 ### Linux (Ubuntu/Debian)
 
 ```bash
+# 基础构建 + Tauri 必需
 sudo apt install build-essential libwebkit2gtk-4.1-dev \
   libappindicator3-dev librsvg2-dev patchelf \
-  libssl-dev libgtk-3-dev libayatana-appindicator3-dev
+  libssl-dev libgtk-3-dev
+
+# Ubuntu 24.04 额外需要 (系统托盘)
+sudo apt install libayatana-appindicator3-dev
 ```
 
 ### macOS
@@ -38,29 +68,32 @@ xcode-select --install
 ## 首次初始化 (M0)
 
 ```bash
-# 0. 激活虚拟环境
-conda activate docvault      # 或 python3.12 -m venv .venv && source .venv/bin/activate
+# 0. 激活 conda 环境
+conda activate docvault
 
-# 1. 进入项目根目录
+# 1. 安装 pnpm (如尚未安装)
+npm install -g pnpm
+
+# 2. 进入项目根目录
 cd docvault
 
-# 2. 安装 Python 开发依赖 (ruff, mypy, pytest)
+# 3. 安装 Python 开发依赖 (已完成：mypy, pytest, ruff)
 pip install ruff mypy pytest
 
-# 3. [待实现] 安装 Agent 依赖
+# 4. [待实现] 安装 Agent 依赖
 # cd apps/client/agent && pip install -e ".[dev]"
 
-# 4. [待实现] 安装 Server 依赖
+# 5. [待实现] 安装 Server 依赖
 # cd apps/server && pip install -e ".[dev]"
 
-# 5. [待实现] 安装前端依赖
+# 6. [待实现] 安装前端依赖
 # pnpm install
 
-# 6. 准备服务端环境变量
+# 7. 准备服务端环境变量
 cp .env.example .env
 # 编辑 .env，设置 DOCVAULT_TOKEN_SECRET 和其他必填项
 
-# 7. [待实现] 生成自签名证书 (局域网 HTTPS)
+# 8. [待实现] 生成自签名证书 (局域网 HTTPS)
 # bash infra/scripts/init-certs.sh
 ```
 
